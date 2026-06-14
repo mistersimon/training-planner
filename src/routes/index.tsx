@@ -125,6 +125,27 @@ export function App() {
     },
   })
 
+  // Desktop: ← / → arrow keys change week. Ignored while a sheet is open, when
+  // typing in a field, or alongside a modifier (don't clobber browser shortcuts).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+      if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return
+      if (search.s != null || settingsOpen) return
+      const el = e.target as HTMLElement | null
+      if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return
+      if (e.key === 'ArrowRight' && curIndex < weeks.length - 1) {
+        e.preventDefault()
+        gotoWeek(curIndex + 1)
+      } else if (e.key === 'ArrowLeft' && curIndex > 0) {
+        e.preventDefault()
+        gotoWeek(curIndex - 1)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [curIndex, weeks.length, search.s, settingsOpen])
+
   const saveUrl = (planUrl: string) => {
     setSettingsOpen(false)
     navigate({ search: (p) => ({ ...p, plan: planUrl, week: undefined, s: undefined }) })

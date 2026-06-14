@@ -1,6 +1,8 @@
 import yaml from 'js-yaml'
 import { dstr, mondayOf, todayKey, localKey } from './format'
 
+export type SessionStatus = 'planned' | 'done' | 'optional'
+
 export interface Session {
   date: string
   title: string
@@ -8,6 +10,7 @@ export interface Session {
   summary?: string // one-liner shown on the card
   notes?: string // longer markdown shown in the detail sheet
   important?: boolean // mark a standout session (race, test) — highlighted in the UI
+  status?: SessionStatus // planned (default) | done (completed) | optional (extra, skippable)
 }
 
 export interface Plan {

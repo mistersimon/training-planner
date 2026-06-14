@@ -14,7 +14,9 @@ export default defineConfig({
       // Update silently in the background — no install/update prompt UI. The new
       // service worker takes control on the next launch.
       registerType: 'autoUpdate',
-      injectRegister: 'auto',
+      // We register the SW ourselves in main.tsx (virtual:pwa-register) so we
+      // can add periodic update checks; don't also auto-inject a script.
+      injectRegister: false,
       // Static assets in public/ that aren't fingerprinted but should be cached
       // for offline use.
       includeAssets: ['favicon-32x32.png', 'apple-touch-icon.png', 'icon.svg'],

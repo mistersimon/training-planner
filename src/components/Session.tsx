@@ -17,11 +17,18 @@ export function Session({ item, onOpen }: { item: IndexedSession; onOpen: (index
               {s.activity}
             </span>
           )}
-          {s.important && (
-            <span className="ml-auto rounded-[5px] bg-[var(--key)] px-1.5 py-px text-[10px] font-bold tracking-[0.05em] text-white">
-              Key
-            </span>
-          )}
+          <span className="ml-auto flex items-center gap-[7px]">
+            {s.status === 'optional' && (
+              <span className="rounded-[5px] bg-[var(--surface-2)] px-1.5 py-px text-[10px] font-bold uppercase tracking-[0.05em] text-[var(--muted)]">
+                Optional
+              </span>
+            )}
+            {s.important && (
+              <span className="rounded-[5px] bg-[var(--key)] px-1.5 py-px text-[10px] font-bold tracking-[0.05em] text-white">
+                Key
+              </span>
+            )}
+          </span>
         </div>
         <div className="break-words text-[14px] font-medium">{s.title}</div>
         {subtitle && <div className="mt-0.5 text-[12.5px] text-[var(--muted)]">{subtitle}</div>}

@@ -1,0 +1,51 @@
+# Demo plan — this ships with the app so the site renders something out of the box.
+# Your real plan lives elsewhere (e.g. a GitHub Gist); load it with ?plan=<raw-url>.
+#
+# Each list item is one session. Only `date` and `title` are required.
+#   date:     YYYY-MM-DD   activity: any label (colors are auto-assigned per label)
+#   important: true to flag a standout session (race/test)
+#   summary:  one line shown on the card
+#   notes:    longer markdown shown when you tap the session
+
+title: Sample Training Plan
+updated: 2026-06-14
+goals:
+  - "**Run** — build toward a faster 5K, 3 easy/quality runs a week."
+  - "**Lift** — 3x/week, keep it the priority."
+notes: |-
+  This is a demo plan. Load your own with a "?plan=<url>" link in the address bar — point it at a raw Gist URL holding your plan.yaml.
+sessions:
+  - date: 2026-06-15
+    activity: lift
+    title: Lower body strength
+    summary: "Squat focus"
+    notes: |-
+      Back squat 4×5, Romanian deadlift 3×8, accessories. Leave the PM for an easy run.
+  - date: 2026-06-15
+    activity: run
+    title: Easy run
+    summary: "5km · conversational pace"
+  - date: 2026-06-16
+    activity: track
+    title: Intervals
+    summary: "6 × 800m · 2min jog rest"
+    notes: |-
+      Hold an even, repeatable pace — the last rep should feel like the first.
+  - date: 2026-06-17
+    activity: swim
+    title: Technique swim
+    summary: "~1000m · drills + easy 100s"
+  - date: 2026-06-18
+    activity: rest
+    title: Rest / mobility
+  - date: 2026-06-20
+    activity: trial
+    important: true
+    title: 5K time trial
+    summary: "Goal: a fresh PB"
+    notes: |-
+      Warm up well, start controlled, negative-split if you can.
+  - date: 2026-06-21
+    activity: cycle
+    title: Endurance ride
+    summary: "30km · Zone 2 · steady cadence"

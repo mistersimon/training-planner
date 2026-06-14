@@ -1,0 +1,9 @@
+node_modules
+dist
+package-lock.json
+.vscode
+**/.history
+
+# Hand-authored plan files — keep exact formatting (block scalars, comments)
+public/*.yaml
+plans

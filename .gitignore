@@ -1,0 +1,14 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+
+# personal plans — keep these out of the shared repo (served locally for testing)
+plans/
+public/plan.yaml
+
+# misc
+.DS_Store
+*.local
+.vite/

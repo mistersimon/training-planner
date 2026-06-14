@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { loadPlan, groupByWeek, type Plan } from '../lib/plan'
 import { todayKey, dstr, dnum, mondayOf, localKey, MO } from '../lib/format'
 import { colorForActivity } from '../lib/types'
+import { useSwipe } from '../lib/useSwipe'
 import { Week } from '../components/Week'
 import { DetailSheet, type SheetContent } from '../components/DetailSheet'
 import { LoadPlanPrompt } from '../components/LoadPlanPrompt'
@@ -111,6 +112,17 @@ export function App() {
   const openSession = (index: number) => navigate({ search: (p) => ({ ...p, s: index }) })
   const closeSheet = () => navigate({ search: (p) => ({ ...p, s: undefined }) })
 
+  // Swipe left → next week, right → previous. Disabled while a session sheet is
+  // open so its own gestures aren't hijacked.
+  const swipe = useSwipe({
+    onLeft: () => {
+      if (search.s == null && curIndex < weeks.length - 1) gotoWeek(curIndex + 1)
+    },
+    onRight: () => {
+      if (search.s == null && curIndex > 0) gotoWeek(curIndex - 1)
+    },
+  })
+
   const saveUrl = (planUrl: string) => {
     setSettingsOpen(false)
     navigate({ search: (p) => ({ ...p, plan: planUrl, week: undefined, s: undefined }) })
@@ -180,7 +192,7 @@ export function App() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-[620px] px-4 pt-1.5" aria-live="polite">
+      <main className="mx-auto max-w-[620px] px-4 pt-1.5" aria-live="polite" {...swipe}>
         {state.error ? (
           <div className="mx-auto my-6 rounded-[12px] border border-[var(--border)] bg-[var(--surface)] p-[14px_16px] text-[14px]">
             <b className="text-[var(--key)]">Couldn't load the plan.</b>
@@ -218,7 +230,7 @@ export function App() {
       </main>
 
       <footer className="mx-auto mt-[22px] max-w-[620px] px-[18px] text-[12px] text-[var(--faint)]">
-        Tap a session for details · use the arrows to change week.
+        Tap a session for details · swipe or use the arrows to change week.
       </footer>
 
       <DetailSheet content={sheet} onClose={closeSheet} />

@@ -47,6 +47,8 @@ export function App() {
   // Bumped when clearing the saved URL so the source re-resolves even if the
   // ?plan param is already absent.
   const [nonce, setNonce] = useState(0)
+  // Bumped by the refresh button to force a re-fetch even when the URL is unchanged.
+  const [refreshKey, setRefreshKey] = useState(0)
   const { url, isFallback } = useMemo(() => resolveSource(search.plan), [search.plan, nonce])
 
   const [state, setState] = useState<{ plan?: Plan; error?: string; loading: boolean }>({ loading: true })
@@ -80,7 +82,7 @@ export function App() {
     return () => {
       cancelled = true
     }
-  }, [url])
+  }, [url, refreshKey])
 
   const plan = state.plan
   const weeks = useMemo(() => (plan ? groupByWeek(plan.sessions) : []), [plan])
@@ -162,7 +164,7 @@ export function App() {
   return (
     <>
       <header
-        className="sticky top-0 z-10 border-b border-[var(--border)] bg-[var(--bg)] px-4 pb-3"
+        className="border-b border-[var(--border)] bg-[var(--bg)] px-4 pb-3"
         style={{ paddingTop: 'calc(env(safe-area-inset-top) + 14px)' }}
       >
         <div className="mx-auto flex max-w-[620px] items-center justify-between gap-3">
@@ -172,6 +174,7 @@ export function App() {
             </h1>
             {updatedLabel && <div className="mt-px text-[12px] text-[var(--faint)]">{updatedLabel}</div>}
           </div>
+          <div className="flex flex-none items-center gap-2">
           <button
             type="button"
             aria-label="Settings"
@@ -189,6 +192,27 @@ export function App() {
               <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
             </svg>
           </button>
+          <button
+            type="button"
+            aria-label="Refresh plan"
+            onClick={() => setRefreshKey((k) => k + 1)}
+            disabled={state.loading}
+            className="flex h-9 w-9 flex-none items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--muted)] hover:bg-[var(--surface-2)] disabled:opacity-60"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className={`h-[18px] w-[18px] ${state.loading ? 'animate-spin' : ''}`}
+            >
+              <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+              <path d="M21 3v6h-6" />
+            </svg>
+          </button>
+          </div>
         </div>
       </header>
 

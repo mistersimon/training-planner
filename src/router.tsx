@@ -2,11 +2,10 @@ import { createRoute, createRouter } from '@tanstack/react-router'
 import { rootRoute } from './routes/__root'
 import { App } from './routes/index'
 
-// Typed search params: ?plan=<url> selects the source, ?week=<YYYY-MM-DD>
-// (the week's Monday) selects the visible week, ?s=<index> deep-links a session.
+// Typed search params: ?plan=<url> selects the source, ?s=<index> deep-links a
+// session.
 interface IndexSearch {
   plan?: string
-  week?: string
   s?: number
 }
 
@@ -22,7 +21,6 @@ const indexRoute = createRoute({
   component: App,
   validateSearch: (search: Record<string, unknown>): IndexSearch => ({
     plan: typeof search.plan === 'string' ? search.plan : undefined,
-    week: typeof search.week === 'string' ? search.week : undefined,
     s: toNum(search.s),
   }),
 })

@@ -13,7 +13,8 @@ export function Day({ day, onOpen }: { day: DayGroup; onOpen: (index: number) =>
 
   return (
     <article
-      className="day-card mb-[9px] flex gap-3 rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-3"
+      id={day.isToday ? 'today' : undefined}
+      className="day-card mb-[9px] flex scroll-mt-20 gap-3 rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-3"
       style={style}
     >
       <div className="w-[42px] flex-none pt-0.5 text-center">

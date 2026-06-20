@@ -5,6 +5,7 @@
 #   date:     YYYY-MM-DD   activity: any label (colors are auto-assigned per label)
 #   important: true to flag a standout session (race/test)
 #   summary:  one line shown on the card
+#   status:   planned (default) | done (completed) | optional (extra/skippable — shows an "Optional" tag)
 #   notes:    longer markdown shown when you tap the session
 
 title: Sample Training Plan
@@ -15,31 +16,42 @@ goals:
 notes: |-
   This is a demo plan. Load your own with a "?plan=<url>" link in the address bar — point it at a raw Gist URL holding your plan.yaml.
 sessions:
+  - date: 2026-06-13
+    activity: run
+    status: done
+    title: Easy run
+    summary: "6.2km · 06:05/km · riverside"
   - date: 2026-06-15
     activity: lift
+    status: planned
     title: Lower body strength
     summary: "Squat focus"
     notes: |-
       Back squat 4×5, Romanian deadlift 3×8, accessories. Leave the PM for an easy run.
   - date: 2026-06-15
     activity: run
+    status: planned
     title: Easy run
     summary: "5km · conversational pace"
   - date: 2026-06-16
     activity: track
+    status: planned
     title: Intervals
     summary: "6 × 800m · 2min jog rest"
     notes: |-
       Hold an even, repeatable pace — the last rep should feel like the first.
   - date: 2026-06-17
     activity: swim
+    status: optional
     title: Technique swim
     summary: "~1000m · drills + easy 100s"
   - date: 2026-06-18
     activity: rest
+    status: planned
     title: Rest / mobility
   - date: 2026-06-20
     activity: trial
+    status: planned
     important: true
     title: 5K time trial
     summary: "Goal: a fresh PB"
@@ -47,5 +59,6 @@ sessions:
       Warm up well, start controlled, negative-split if you can.
   - date: 2026-06-21
     activity: cycle
+    status: optional
     title: Endurance ride
     summary: "30km · Zone 2 · steady cadence"

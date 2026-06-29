@@ -1,19 +1,22 @@
 import yaml from 'js-yaml'
 import { dstr, mondayOf, todayKey, localKey } from './format'
 
-// Single source of truth for a session's state — mutually exclusive:
-//   planned (default) · done · optional (skippable) · key (standout, highlighted)
-//   · fixed (locked to its date — can't be dragged/rescheduled)
-export type SessionStatus = 'planned' | 'done' | 'optional' | 'key' | 'fixed'
+// A single priority level — captures both how important a session is and how
+// much the AI coach may move it. Default (omitted) = medium/normal.
+//   critical → races / key events: most important, never move — highlighted
+//   high     → important; prefer to keep its date — highlighted
+//   low      → minor/optional; fine to move or skip
+export type Priority = 'low' | 'high' | 'critical'
 
 export interface Session {
   date: string
   title: string
   activity?: string
   location?: string // where it happens (gym, track, pool…) — shown on the card
-  summary?: string // one-liner shown on the card
+  priority?: string // scheduling hint: 'fixed' | 'optional' | (extensible)
+  target?: string // the plan / prescription (shown on the card until done)
+  actual?: string // what happened; its presence means the session is done
   notes?: string // longer markdown shown in the detail sheet
-  status?: SessionStatus
 }
 
 export interface Plan {
@@ -24,28 +27,13 @@ export interface Plan {
   sessions: Session[]
 }
 
-// Normalize one raw session: coerce the date, and fold the legacy boolean flags
-// (`important`/`fixed`) into the single `status`. An explicit done/optional/key/
-// fixed status wins; otherwise important → key, fixed → fixed.
-function normalizeSession(raw: Record<string, unknown>): Session {
-  const { important, fixed, status, ...rest } = raw as Record<string, unknown> & {
-    important?: boolean
-    fixed?: boolean
-    status?: SessionStatus
-  }
-  let next: SessionStatus | undefined = status
-  if (!next || next === 'planned') {
-    if (important) next = 'key'
-    else if (fixed) next = 'fixed'
-  }
-  return { ...(rest as Omit<Session, 'date' | 'status'>), date: dstr(raw.date), status: next }
-}
-
 // Parse the flat YAML plan: a `sessions` list plus optional title/updated/goals/notes.
+// Only the current schema is supported — no legacy/back-compat handling (see
+// CLAUDE.md). The only coercion is normalizing `date` to a YYYY-MM-DD string.
 export function loadPlan(text: string): Plan {
   const raw = (yaml.load(text) ?? {}) as Record<string, unknown>
   const sessions: Session[] = Array.isArray(raw.sessions)
-    ? (raw.sessions as Record<string, unknown>[]).map(normalizeSession)
+    ? (raw.sessions as Session[]).map((s) => ({ ...s, date: dstr(s.date) }))
     : []
 
   return {
@@ -125,7 +113,8 @@ export function groupByWeek(sessions: Session[]): WeekGroup[] {
     const day = week.days.find((d) => d.key === dateKey)
     if (day) {
       day.sessions.push(item)
-      if (item.session.status === 'key') day.isImportant = true
+      const pri = item.session.priority
+      if (pri === 'high' || pri === 'critical') day.isImportant = true
     }
   }
 

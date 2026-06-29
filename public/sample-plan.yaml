@@ -1,63 +1,59 @@
-# Demo plan — this ships with the app so the site renders something out of the box.
-# Your real plan lives elsewhere (e.g. a GitHub Gist); load it with ?plan=<raw-url>.
-#
+# Training plan — single source of truth (flat YAML). Edited in the app and synced
+# to this Gist; also safe to hand-edit (you or an AI coach).
 # Each list item is one session. Only `date` and `title` are required.
-#   date:     YYYY-MM-DD   activity: any label (colors are auto-assigned per label)
-#   summary:  one line shown on the card
-#   status:   planned (default) | done | optional | key (standout, highlighted) | fixed (locked to its date)
-#   notes:    longer markdown shown when you tap the session
+#   date:     YYYY-MM-DD
+#   activity: freeform label (run / lift / swim / …) — card colour is derived from it
+#   location: where it happens
+#   priority: low | high | critical — omit for normal/medium. Sets how important a
+#             session is and how freely the coach may move it: critical = race / key
+#             event, never move; high = keep its date if possible; low = optional,
+#             move or skip freely.
+#   target:   the plan / prescription · actual: what happened (its presence ⇒ done)
+#   notes:    longer markdown shown when you open the session
+# Two sessions on the same date just share that date (e.g. an AM lift + a PM run).
 
 title: Sample Training Plan
-updated: 2026-06-14
+updated: '2026-06-14'
 goals:
-  - "**Run** — build toward a faster 5K, 3 easy/quality runs a week."
-  - "**Lift** — 3x/week, keep it the priority."
-notes: |-
-  This is a demo plan. Load your own with a "?plan=<url>" link in the address bar — point it at a raw Gist URL holding your plan.yaml.
+  - '**Run** — build toward a faster 5K, 3 easy/quality runs a week.'
+  - '**Lift** — 3x/week, keep it the priority.'
+notes: This is a demo plan. Load your own with a "?plan=<url>" link in the address bar — point it at a raw Gist URL holding your plan.yaml.
 sessions:
-  - date: 2026-06-13
+  - date: '2026-06-13'
     activity: run
-    status: done
     title: Easy run
-    summary: "6.2km · 06:05/km · riverside"
-  - date: 2026-06-15
+    actual: 6.2km · 06:05/km · riverside
+  - date: '2026-06-15'
     activity: lift
-    status: planned
     title: Lower body strength
-    summary: "Squat focus"
-    notes: |-
-      Back squat 4×5, Romanian deadlift 3×8, accessories. Leave the PM for an easy run.
-  - date: 2026-06-15
+    target: Squat focus
+    notes: Back squat 4×5, Romanian deadlift 3×8, accessories. Leave the PM for an easy run.
+  - date: '2026-06-15'
     activity: run
-    status: planned
     title: Easy run
-    summary: "5km · conversational pace"
-  - date: 2026-06-16
+    target: 5km · conversational pace
+  - date: '2026-06-16'
     activity: track
-    status: planned
     title: Intervals
     location: Athletics track
-    summary: "6 × 800m · 2min jog rest"
-    notes: |-
-      Hold an even, repeatable pace — the last rep should feel like the first.
-  - date: 2026-06-17
+    target: 6 × 800m · 2min jog rest
+    notes: Hold an even, repeatable pace — the last rep should feel like the first.
+  - date: '2026-06-17'
     activity: swim
-    status: optional
+    priority: low
     title: Technique swim
-    summary: "~1000m · drills + easy 100s"
-  - date: 2026-06-18
+    target: ~1000m · drills + easy 100s
+  - date: '2026-06-18'
     activity: rest
-    status: planned
     title: Rest / mobility
-  - date: 2026-06-20
+  - date: '2026-06-20'
     activity: trial
-    status: key
+    priority: critical
     title: 5K time trial
-    summary: "Goal: a fresh PB"
-    notes: |-
-      Warm up well, start controlled, negative-split if you can.
-  - date: 2026-06-21
+    target: 'Goal: a fresh PB'
+    notes: Warm up well, start controlled, negative-split if you can.
+  - date: '2026-06-21'
     activity: cycle
-    status: optional
+    priority: low
     title: Endurance ride
-    summary: "30km · Zone 2 · steady cadence"
+    target: 30km · Zone 2 · steady cadence

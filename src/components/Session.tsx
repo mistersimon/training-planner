@@ -12,16 +12,6 @@ export interface EditApi {
   onAdd: (dayKey: string) => void
 }
 
-// Small lock glyph — shown on a fixed (date-locked) session.
-function LockIcon({ className = 'h-3.5 w-3.5' }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className={className}>
-      <rect x="5" y="11" width="14" height="9" rx="2" />
-      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
-    </svg>
-  )
-}
-
 // Map-pin glyph — shown next to a session's location.
 function PinIcon({ className = 'h-3 w-3 flex-none' }: { className?: string }) {
   return (
@@ -45,21 +35,28 @@ export function Session({
 }) {
   const s = item.session
   const color = colorForActivity(s.activity)
-  const subtitle = s.summary?.trim() ?? ''
-  const hasMore = !!s.notes?.trim()
+  // Card subtitle: what happened once done, otherwise the plan.
+  const subtitle = (s.actual?.trim() || s.target?.trim()) ?? ''
+  // Openable when there's anything more to show in the sheet — notes, the plan,
+  // the result, or a location (so tapping a done session also reveals its target).
+  const hasMore = !!(s.notes?.trim() || s.target?.trim() || s.actual?.trim() || s.location?.trim())
 
   const tagBase = 'rounded-[5px] px-1.5 py-px text-[10px] font-bold uppercase tracking-[0.05em]'
   const tags = (
     <span className="ml-auto flex items-center gap-[7px]">
-      {s.status === 'fixed' && !editing && (
-        <span className="flex items-center text-[var(--muted)]" title="Fixed — won't be rescheduled">
-          <LockIcon />
+      {s.priority === 'critical' && (
+        <span className={`${tagBase} bg-[var(--key)] text-white`} title="Critical — race / key event">
+          Critical
         </span>
       )}
-      {s.status === 'optional' && (
-        <span className={`${tagBase} bg-[var(--surface-2)] text-[var(--muted)]`}>Optional</span>
+      {s.priority === 'high' && (
+        <span className={`${tagBase} bg-[var(--ring)] text-white`} title="High priority">
+          High
+        </span>
       )}
-      {s.status === 'key' && <span className={`${tagBase} bg-[var(--key)] text-white`}>Key</span>}
+      {s.priority === 'low' && (
+        <span className={`${tagBase} bg-[var(--surface-2)] text-[var(--muted)]`}>Low</span>
+      )}
     </span>
   )
 
@@ -90,10 +87,10 @@ export function Session({
 
   const cls = '-m-[3px] flex w-full items-stretch gap-2.5 rounded-[9px] p-[3px]'
 
-  // Edit mode: drag to reschedule (unless fixed), plus lock + delete controls.
+  // Edit mode: every session drags (fixed is just a hint, not a lock), plus
+  // edit + delete controls.
   if (editing && edit) {
     const isDragging = edit.draggingIndex === item.index
-    const draggable = s.status !== 'fixed'
     // Stop pointerdown on a control from also starting a card drag.
     const stop = (e: React.PointerEvent) => e.stopPropagation()
     const ctrlBtn =
@@ -101,24 +98,20 @@ export function Session({
 
     return (
       <div
-        className={`${cls} items-center ${draggable ? 'cursor-grab touch-none select-none active:cursor-grabbing' : ''} ${
+        className={`${cls} items-center cursor-grab touch-none select-none active:cursor-grabbing ${
           isDragging ? 'opacity-30' : ''
         }`}
-        onPointerDown={draggable ? (e) => edit.onDragStart(e, item.index, s.title, color) : undefined}
+        onPointerDown={(e) => edit.onDragStart(e, item.index, s.title, color)}
       >
         <span className="flex-none self-center text-[var(--faint)]" aria-hidden>
-          {draggable ? (
-            <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4 block">
-              <circle cx="9" cy="6" r="1.6" />
-              <circle cx="15" cy="6" r="1.6" />
-              <circle cx="9" cy="12" r="1.6" />
-              <circle cx="15" cy="12" r="1.6" />
-              <circle cx="9" cy="18" r="1.6" />
-              <circle cx="15" cy="18" r="1.6" />
-            </svg>
-          ) : (
-            <LockIcon className="h-4 w-4 block" />
-          )}
+          <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4 block">
+            <circle cx="9" cy="6" r="1.6" />
+            <circle cx="15" cy="6" r="1.6" />
+            <circle cx="9" cy="12" r="1.6" />
+            <circle cx="15" cy="12" r="1.6" />
+            <circle cx="9" cy="18" r="1.6" />
+            <circle cx="15" cy="18" r="1.6" />
+          </svg>
         </span>
         {colorBar}
         {content}

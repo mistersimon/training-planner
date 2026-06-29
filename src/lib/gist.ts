@@ -3,12 +3,19 @@ import type { Plan, Session } from './plan'
 
 // Header comment re-emitted on every write (js-yaml.dump drops comments), so the
 // raw Gist stays readable/AI-editable by hand too.
-const HEADER = `# Training plan — single source of truth (flat schema). Edited in the app and
-# synced to this Gist; you can also hand-edit it (AI or otherwise).
+const HEADER = `# Training plan — single source of truth (flat YAML). Edited in the app and synced
+# to this Gist; also safe to hand-edit (you or an AI coach).
 # Each list item is one session. Only \`date\` and \`title\` are required.
-#   date: YYYY-MM-DD · activity: any label (colors auto-assigned) · title: short name
-#   status: planned (default) | done | optional | key (standout) | fixed (locked)
-#   summary: one line on the card · notes: longer markdown shown in the detail sheet
+#   date:     YYYY-MM-DD
+#   activity: freeform label (run / lift / swim / …) — card colour is derived from it
+#   location: where it happens
+#   priority: low | high | critical — omit for normal/medium. Sets how important a
+#             session is and how freely the coach may move it: critical = race / key
+#             event, never move; high = keep its date if possible; low = optional,
+#             move or skip freely.
+#   target:   the plan / prescription · actual: what happened (its presence ⇒ done)
+#   notes:    longer markdown shown when you open the session
+# Two sessions on the same date just share that date (e.g. an AM lift + a PM run).
 `
 
 // Serialize a session into an ordered plain object, dropping empty fields so the
@@ -16,10 +23,11 @@ const HEADER = `# Training plan — single source of truth (flat schema). Edited
 function cleanSession(s: Session): Record<string, unknown> {
   const o: Record<string, unknown> = { date: s.date }
   if (s.activity) o.activity = s.activity
-  if (s.status && s.status !== 'planned') o.status = s.status
+  if (s.priority) o.priority = s.priority
   o.title = s.title ?? ''
   if (s.location?.trim()) o.location = s.location
-  if (s.summary?.trim()) o.summary = s.summary
+  if (s.target?.trim()) o.target = s.target
+  if (s.actual?.trim()) o.actual = s.actual
   if (s.notes?.trim()) o.notes = s.notes
   return o
 }

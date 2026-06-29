@@ -1,23 +1,24 @@
 import { useEffect, useRef, useState } from 'react'
 import { Markdown } from './Markdown'
-import type { SessionStatus } from '../lib/plan'
 
 export interface SheetContent {
   title: string
   kindLabel?: string
   kindColor?: string
   location?: string // where it happens
-  lead?: string // one-line summary shown above the notes
-  body?: string // markdown
+  target?: string // the plan (shown above notes)
+  actual?: string // what happened (shown above notes when done)
+  body?: string // markdown notes
 }
 
 export interface SheetEditFields {
   title: string
   activity: string
   location: string
-  summary: string
+  target: string
+  actual: string
   notes: string
-  status: SessionStatus
+  priority: string // '' = medium (default), or 'low' | 'high' | 'critical'
 }
 
 // When present, the sheet shows editable fields instead of the read-only view.
@@ -26,12 +27,11 @@ export interface SheetEdit extends SheetEditFields {
   onSave: (fields: SheetEditFields) => void
 }
 
-const STATUSES: { value: SessionStatus; label: string }[] = [
-  { value: 'planned', label: 'Planned' },
-  { value: 'done', label: 'Done' },
-  { value: 'optional', label: 'Optional' },
-  { value: 'key', label: 'Key' },
-  { value: 'fixed', label: 'Fixed' },
+const PRIORITIES: { value: string; label: string }[] = [
+  { value: 'low', label: 'Low' },
+  { value: '', label: 'Medium' },
+  { value: 'high', label: 'High' },
+  { value: 'critical', label: 'Critical' },
 ]
 
 // Generic bottom sheet, reused for session detail and the goals view. Pass
@@ -53,9 +53,10 @@ export function DetailSheet({
   const [title, setTitle] = useState('')
   const [activity, setActivity] = useState('')
   const [location, setLocation] = useState('')
-  const [summary, setSummary] = useState('')
+  const [target, setTarget] = useState('')
+  const [actual, setActual] = useState('')
   const [notes, setNotes] = useState('')
-  const [status, setStatus] = useState<SessionStatus>('planned')
+  const [priority, setPriority] = useState('')
 
   // Reset the form whenever a different session opens for editing.
   useEffect(() => {
@@ -63,9 +64,10 @@ export function DetailSheet({
     setTitle(edit.title)
     setActivity(edit.activity)
     setLocation(edit.location)
-    setSummary(edit.summary)
+    setTarget(edit.target)
+    setActual(edit.actual)
     setNotes(edit.notes)
-    setStatus(edit.status)
+    setPriority(edit.priority)
   }, [edit?.index, open]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -132,29 +134,33 @@ export function DetailSheet({
         {edit ? (
           <div className="flex flex-col gap-3 overflow-y-auto p-[8px_18px_18px]">
             <div>
-              <span className="mb-1 block text-[12px] font-medium text-[var(--muted)]">Status</span>
+              <span className="mb-1 block text-[12px] font-medium text-[var(--muted)]">Priority</span>
               <div className="flex flex-wrap gap-1.5">
-                {STATUSES.map((st) => (
+                {PRIORITIES.map((p) => (
                   <button
-                    key={st.value}
+                    key={p.value}
                     type="button"
-                    aria-pressed={status === st.value}
-                    onClick={() => setStatus(st.value)}
+                    aria-pressed={priority === p.value}
+                    onClick={() => setPriority(p.value)}
                     className={
-                      status === st.value
+                      priority === p.value
                         ? 'rounded-full bg-[var(--ring)] px-3 py-1 text-[12px] font-semibold text-white'
                         : 'rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1 text-[12px] font-medium text-[var(--muted)] hover:bg-[var(--surface-2)]'
                     }
                   >
-                    {st.label}
+                    {p.label}
                   </button>
                 ))}
               </div>
-              {status === 'fixed' && (
-                <p className="mt-1.5 text-[11.5px] text-[var(--faint)]">
-                  Fixed sessions are locked to their date and can't be dragged.
-                </p>
-              )}
+              <p className="mt-1.5 text-[11.5px] text-[var(--faint)]">
+                {priority === 'critical'
+                  ? 'A race or key event — most important, the coach should never move it.'
+                  : priority === 'high'
+                    ? 'Important — the coach should prefer to keep its date.'
+                    : priority === 'low'
+                      ? 'Minor / optional — fine to move or skip.'
+                      : 'Medium — normal session, the coach may reschedule it freely.'}
+              </p>
             </div>
             <label className="block">
               <span className="mb-1 block text-[12px] font-medium text-[var(--muted)]">Activity</span>
@@ -183,11 +189,24 @@ export function DetailSheet({
               />
             </label>
             <label className="block">
-              <span className="mb-1 block text-[12px] font-medium text-[var(--muted)]">Summary</span>
+              <span className="mb-1 block text-[12px] font-medium text-[var(--muted)]">
+                Target <span className="font-normal">(the plan)</span>
+              </span>
               <input
-                value={summary}
-                onChange={(e) => setSummary(e.target.value)}
-                placeholder="One line shown on the card"
+                value={target}
+                onChange={(e) => setTarget(e.target.value)}
+                placeholder="e.g. 5×1km @ 4:27/km"
+                className={fieldCls}
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-[12px] font-medium text-[var(--muted)]">
+                Actual <span className="font-normal">(what happened — fills once done)</span>
+              </span>
+              <input
+                value={actual}
+                onChange={(e) => setActual(e.target.value)}
+                placeholder="e.g. 5.03km · 25:43 · 5:05/km"
                 className={fieldCls}
               />
             </label>
@@ -207,7 +226,7 @@ export function DetailSheet({
               <button
                 type="button"
                 onClick={() => {
-                  edit.onSave({ title, activity, location, summary, notes, status })
+                  edit.onSave({ title, activity, location, target, actual, notes, priority })
                   onClose()
                 }}
                 disabled={!title.trim()}
@@ -241,10 +260,21 @@ export function DetailSheet({
                 {content.location}
               </p>
             )}
-            {content.lead && (
-              <p className="mb-3 border-b border-[var(--border)] pb-3 text-[13px] text-[var(--muted)]">
-                {content.lead}
-              </p>
+            {(content.target?.trim() || content.actual?.trim()) && (
+              <div className="mb-3 space-y-1 border-b border-[var(--border)] pb-3 text-[13px]">
+                {content.target?.trim() && (
+                  <p className="text-[var(--muted)]">
+                    <span className="font-semibold text-[var(--faint)]">Target </span>
+                    {content.target}
+                  </p>
+                )}
+                {content.actual?.trim() && (
+                  <p className="text-[var(--text)]">
+                    <span className="font-semibold text-[var(--faint)]">Actual </span>
+                    {content.actual}
+                  </p>
+                )}
+              </div>
             )}
             {content.body && <Markdown>{content.body}</Markdown>}
           </div>

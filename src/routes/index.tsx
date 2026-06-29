@@ -232,12 +232,13 @@ export function App() {
   )
 
   // Move a session to another day, or reorder it within a day. `target` carries
-  // the day plus an optional sibling to insert next to. Fixed sessions don't move.
+  // the day plus an optional sibling to insert next to. Every session can move —
+  // `priority: fixed` is only a hint to the AI coach, not an app-level lock.
   const reschedule = useCallback(
     (index: number, target: DropTarget) => {
       const plan = planRef.current
       const cur = plan?.sessions[index]
-      if (!plan || !cur || cur.status === 'fixed') return
+      if (!plan || !cur) return
       const moved: Session = { ...cur, date: target.dayKey }
       const rest = plan.sessions.filter((_, i) => i !== index)
       let pos = rest.length
@@ -271,7 +272,8 @@ export function App() {
     [commitPlan],
   )
 
-  // Save edited fields (status / title / summary / notes) for a session.
+  // Save edited fields (priority / title / activity / location / target / actual /
+  // notes) for a session.
   const updateSession = useCallback(
     (index: number, fields: SheetEditFields) => {
       const plan = planRef.current
@@ -280,11 +282,12 @@ export function App() {
         i === index
           ? {
               ...ss,
-              status: fields.status === 'planned' ? undefined : fields.status,
+              priority: fields.priority.trim() || undefined,
               title: fields.title.trim(),
               activity: fields.activity.trim() || undefined,
               location: fields.location.trim() || undefined,
-              summary: fields.summary.trim() || undefined,
+              target: fields.target.trim() || undefined,
+              actual: fields.actual.trim() || undefined,
               notes: fields.notes.trim() || undefined,
             }
           : ss,
@@ -459,14 +462,15 @@ export function App() {
         kindLabel: s.activity,
         kindColor: colorForActivity(s.activity),
         location: s.location,
-        lead: s.summary?.trim() || undefined,
+        target: s.target,
+        actual: s.actual,
         body: s.notes,
       }
     }
     return null
   }, [search.s, plan])
 
-  // In edit mode, an open session is edited (title/summary/notes) rather than read.
+  // In edit mode, an open session is edited rather than read.
   const sheetEdit: SheetEdit | undefined = useMemo(() => {
     const i = search.s
     if (!editing || i == null || !plan?.sessions[i]) return undefined
@@ -476,9 +480,10 @@ export function App() {
       title: s.title || '',
       activity: s.activity || '',
       location: s.location || '',
-      summary: s.summary || '',
+      target: s.target || '',
+      actual: s.actual || '',
       notes: s.notes || '',
-      status: s.status || 'planned',
+      priority: s.priority || '',
       onSave: (fields) => {
         draftIndexRef.current = null // saved — no longer an abandoned draft
         updateSession(i, fields)

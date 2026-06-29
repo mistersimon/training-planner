@@ -2,15 +2,20 @@ import type { WeekGroup } from '../lib/plan'
 import { rangeLabel } from '../lib/format'
 import { colorForActivity } from '../lib/types'
 import { Day } from './Day'
+import type { EditApi } from './Session'
 
 export function Week({
   week,
   onOpen,
   innerRef,
+  editing = false,
+  edit,
 }: {
   week: WeekGroup
   onOpen: (index: number) => void
   innerRef?: (el: HTMLElement | null) => void
+  editing?: boolean
+  edit?: EditApi
 }) {
   const chips = Object.entries(week.counts)
     .sort(([a], [b]) => a.localeCompare(b))
@@ -44,7 +49,7 @@ export function Week({
         {chips.length > 0 && <div className="mt-2 flex flex-wrap gap-[5px]">{chips}</div>}
       </div>
       {week.days.map((day) => (
-        <Day key={day.key} day={day} onOpen={onOpen} />
+        <Day key={day.key} day={day} onOpen={onOpen} editing={editing} edit={edit} />
       ))}
     </section>
   )

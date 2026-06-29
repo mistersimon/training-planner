@@ -1,12 +1,21 @@
 import { getRouteApi } from '@tanstack/react-router'
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { loadPlan, groupByWeek, type Plan } from '../lib/plan'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { loadPlan, groupByWeek, type Plan, type Session } from '../lib/plan'
+import { dumpPlan, parseGistUrl, pushToGist } from '../lib/gist'
+import { useDragReschedule, type DropTarget } from '../lib/useDragReschedule'
 import { todayKey, dnum, mondayOf, localKey, rangeLabel, MO } from '../lib/format'
 import { colorForActivity } from '../lib/types'
 import { Week } from '../components/Week'
-import { DetailSheet, type SheetContent } from '../components/DetailSheet'
+import { type EditApi } from '../components/Session'
+import {
+  DetailSheet,
+  type SheetContent,
+  type SheetEdit,
+  type SheetEditFields,
+} from '../components/DetailSheet'
 import { LoadPlanPrompt } from '../components/LoadPlanPrompt'
 import { SettingsSheet } from '../components/SettingsSheet'
+import { RawEditSheet } from '../components/RawEditSheet'
 
 const readConfiguredUrl = () => {
   try {
@@ -18,8 +27,45 @@ const readConfiguredUrl = () => {
 
 const route = getRouteApi('/')
 const STORE_KEY = 'planUrl'
+const TOKEN_KEY = 'gistToken'
 const CACHE_PREFIX = 'planCache:'
+const DIRTY_PREFIX = 'planDirty:'
 const monKeyOf = (dateKey: string) => localKey(mondayOf(dateKey))
+
+const readToken = () => {
+  try {
+    return localStorage.getItem(TOKEN_KEY) || ''
+  } catch {
+    return ''
+  }
+}
+const writeToken = (token: string) => {
+  try {
+    if (token) localStorage.setItem(TOKEN_KEY, token)
+    else localStorage.removeItem(TOKEN_KEY)
+  } catch {
+    /* ignore */
+  }
+}
+
+// "Dirty" = the device holds local edits not yet pushed to the Gist. Persisted
+// so a reload keeps the edits instead of the background fetch silently clobbering
+// them with the older remote copy.
+const readDirty = (url: string) => {
+  try {
+    return localStorage.getItem(DIRTY_PREFIX + url) === '1'
+  } catch {
+    return false
+  }
+}
+const writeDirty = (url: string, dirty: boolean) => {
+  try {
+    if (dirty) localStorage.setItem(DIRTY_PREFIX + url, '1')
+    else localStorage.removeItem(DIRTY_PREFIX + url)
+  } catch {
+    /* ignore */
+  }
+}
 
 // Last good raw YAML per source URL, so the PWA can render instantly (and
 // offline) while a fresh copy is fetched in the background.
@@ -61,7 +107,7 @@ export function App() {
   const search = route.useSearch()
   const navigate = route.useNavigate()
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [copied, setCopied] = useState(false)
+  const [rawOpen, setRawOpen] = useState(false)
   // Bumped when clearing the saved URL so the source re-resolves even if the
   // ?plan param is already absent.
   const [nonce, setNonce] = useState(0)
@@ -72,9 +118,17 @@ export function App() {
   const [state, setState] = useState<{ plan?: Plan; raw?: string; error?: string; loading: boolean }>({
     loading: true,
   })
+  // Edit mode + unsaved-edit tracking. `dirtyRef` lets the background fetch see
+  // the latest value without re-running on every change.
+  const [editing, setEditing] = useState(false)
+  const [dirty, setDirty] = useState(() => readDirty(url))
+  const dirtyRef = useRef(dirty)
+  dirtyRef.current = dirty
+  const [save, setSave] = useState<{ saving: boolean; error?: string; ok?: boolean }>({ saving: false })
 
   useEffect(() => {
     let cancelled = false
+    setDirty(readDirty(url))
 
     // 1. Render the last cached plan immediately so the app (especially the
     // installed PWA) never opens blank — even offline. Keep `loading` true so
@@ -101,6 +155,11 @@ export function App() {
       })
       .then((text) => {
         if (cancelled) return
+        // Don't overwrite local unsaved edits with the (older) remote copy.
+        if (dirtyRef.current) {
+          setState((s) => ({ ...s, loading: false }))
+          return
+        }
         try {
           const plan = loadPlan(text)
           writeCachedPlan(url, text)
@@ -109,8 +168,7 @@ export function App() {
           // Network gave us unparseable YAML: keep the cached plan if we have
           // one, otherwise surface the parse error.
           if (cached) setState((s) => ({ ...s, loading: false }))
-          else
-            setState({ loading: false, error: (e as Error).message || 'YAML could not be parsed.' })
+          else setState({ loading: false, error: (e as Error).message || 'YAML could not be parsed.' })
         }
       })
       .catch((e) => {
@@ -147,8 +205,142 @@ export function App() {
 
   const scrollRef = useRef<HTMLElement | null>(null)
   const weekRefs = useRef<(HTMLElement | null)[]>([])
+  // Index of a freshly-added session whose editor is open but not yet saved.
+  // Closing the editor without saving removes it (see closeSheet / sheetEdit).
+  const draftIndexRef = useRef<number | null>(null)
   const scrollToWeek = (i: number, behavior: ScrollBehavior = 'smooth') => {
     weekRefs.current[i]?.scrollIntoView({ behavior, block: 'start' })
+  }
+
+  // Latest plan, read by the edit handlers without re-creating them each render.
+  const planRef = useRef<Plan | undefined>(undefined)
+  planRef.current = state.plan
+
+  // Apply an edit: stamp `updated`, serialize, cache, mark dirty. One path for
+  // every mutation (reschedule / delete / lock / notes) so they stay consistent.
+  const commitPlan = useCallback(
+    (next: Plan) => {
+      const withUpdated: Plan = { ...next, updated: todayKey }
+      const raw = dumpPlan(withUpdated)
+      writeCachedPlan(url, raw)
+      writeDirty(url, true)
+      setState((s) => ({ ...s, plan: withUpdated, raw }))
+      setDirty(true)
+      setSave((v) => ({ ...v, ok: false, error: undefined }))
+    },
+    [url],
+  )
+
+  // Move a session to another day, or reorder it within a day. `target` carries
+  // the day plus an optional sibling to insert next to. Fixed sessions don't move.
+  const reschedule = useCallback(
+    (index: number, target: DropTarget) => {
+      const plan = planRef.current
+      const cur = plan?.sessions[index]
+      if (!plan || !cur || cur.status === 'fixed') return
+      const moved: Session = { ...cur, date: target.dayKey }
+      const rest = plan.sessions.filter((_, i) => i !== index)
+      let pos = rest.length
+      if (target.refIndex != null && target.refIndex !== index) {
+        const at = rest.indexOf(plan.sessions[target.refIndex])
+        if (at >= 0) pos = target.side === 'after' ? at + 1 : at
+      } else {
+        // No sibling anchor: drop after the last existing card of that day.
+        for (let i = rest.length - 1; i >= 0; i--) {
+          if (rest[i].date === target.dayKey) {
+            pos = i + 1
+            break
+          }
+        }
+      }
+      // No-op if it would land exactly where it already is.
+      const sameSpot = cur.date === target.dayKey && plan.sessions.indexOf(cur) === pos
+      if (sameSpot) return
+      rest.splice(pos, 0, moved)
+      commitPlan({ ...plan, sessions: rest })
+    },
+    [commitPlan],
+  )
+
+  const deleteSession = useCallback(
+    (index: number) => {
+      const plan = planRef.current
+      if (!plan?.sessions[index]) return
+      commitPlan({ ...plan, sessions: plan.sessions.filter((_, i) => i !== index) })
+    },
+    [commitPlan],
+  )
+
+  // Save edited fields (status / title / summary / notes) for a session.
+  const updateSession = useCallback(
+    (index: number, fields: SheetEditFields) => {
+      const plan = planRef.current
+      if (!plan?.sessions[index]) return
+      const sessions = plan.sessions.map((ss, i) =>
+        i === index
+          ? {
+              ...ss,
+              status: fields.status === 'planned' ? undefined : fields.status,
+              title: fields.title.trim(),
+              activity: fields.activity.trim() || undefined,
+              location: fields.location.trim() || undefined,
+              summary: fields.summary.trim() || undefined,
+              notes: fields.notes.trim() || undefined,
+            }
+          : ss,
+      )
+      commitPlan({ ...plan, sessions })
+    },
+    [commitPlan],
+  )
+
+  // Add a blank session on a day and open the editor for it. Abandoned (still
+  // untitled) drafts are cleaned up on close — see closeSheet.
+  const addSession = useCallback(
+    (dayKey: string) => {
+      const plan = planRef.current
+      if (!plan) return
+      const newIndex = plan.sessions.length
+      draftIndexRef.current = newIndex
+      commitPlan({ ...plan, sessions: [...plan.sessions, { date: dayKey, title: '' }] })
+      navigate({ search: (p) => ({ ...p, s: newIndex }) })
+    },
+    [commitPlan, navigate],
+  )
+
+  const { drag, over, begin } = useDragReschedule(editing, scrollRef, reschedule)
+  const editApi: EditApi = useMemo(
+    () => ({
+      draggingIndex: drag?.index ?? null,
+      over,
+      onDragStart: begin,
+      onDelete: deleteSession,
+      onAdd: addSession,
+    }),
+    [drag, over, begin, deleteSession, addSession],
+  )
+
+  // Push the current YAML to the Gist. Needs a raw-gist URL + a stored token.
+  const saveToGist = async () => {
+    const target = parseGistUrl(url)
+    const token = readToken()
+    if (!state.raw || !target) {
+      setSave({ saving: false, error: 'Set a raw Gist URL in settings to save.' })
+      return
+    }
+    if (!token) {
+      setSave({ saving: false, error: 'Add a GitHub token in settings to save.' })
+      return
+    }
+    setSave({ saving: true })
+    try {
+      await pushToGist(target, token, state.raw)
+      writeDirty(url, false)
+      setDirty(false)
+      setSave({ saving: false, ok: true })
+    } catch (e) {
+      setSave({ saving: false, error: (e as Error).message || 'Push failed.' })
+    }
   }
   // Bring today's card to the top; fall back to the current week's start when
   // today isn't in the plan (e.g. the plan begins in the future).
@@ -197,7 +389,18 @@ export function App() {
   }, [plan, weeks.length])
 
   const openSession = (index: number) => navigate({ search: (p) => ({ ...p, s: index }) })
-  const closeSheet = () => navigate({ search: (p) => ({ ...p, s: undefined }) })
+  const closeSheet = () => {
+    // Drop an abandoned new session (added, then closed without saving). Saving
+    // clears the draft ref first (see sheetEdit.onSave), so this only fires on
+    // a genuine cancel.
+    const i = draftIndexRef.current
+    draftIndexRef.current = null
+    const plan = planRef.current
+    if (i != null && plan?.sessions[i]) {
+      commitPlan({ ...plan, sessions: plan.sessions.filter((_, idx) => idx !== i) })
+    }
+    navigate({ search: (p) => ({ ...p, s: undefined }) })
+  }
 
   const saveUrl = (planUrl: string) => {
     setSettingsOpen(false)
@@ -214,14 +417,36 @@ export function App() {
     navigate({ search: (p) => ({ ...p, plan: undefined, s: undefined }) })
   }
 
-  const copyYaml = async () => {
-    if (!state.raw) return
+  // Save hand-edited raw YAML: validate by parsing, then apply the user's text
+  // verbatim (keeping their formatting/comments — no re-serialize) and push to
+  // the Gist when configured. Returns a message for the editor to surface.
+  const saveRaw = async (text: string): Promise<{ error?: string; note?: string }> => {
+    let parsed: Plan
     try {
-      await navigator.clipboard.writeText(state.raw)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
-    } catch {
-      /* ignore */
+      parsed = loadPlan(text)
+    } catch (e) {
+      return { error: (e as Error).message || 'YAML could not be parsed.' }
+    }
+    writeCachedPlan(url, text)
+    writeDirty(url, true)
+    setState((s) => ({ ...s, plan: parsed, raw: text }))
+    setDirty(true)
+    setSave((v) => ({ ...v, ok: false, error: undefined }))
+
+    const target = parseGistUrl(url)
+    const token = readToken()
+    if (!target) return { note: 'Applied on this device. Set a Gist URL in settings to sync.' }
+    if (!token) return { note: 'Applied on this device. Add a GitHub token in settings to sync.' }
+    setSave({ saving: true })
+    try {
+      await pushToGist(target, token, text)
+      writeDirty(url, false)
+      setDirty(false)
+      setSave({ saving: false, ok: true })
+      return {}
+    } catch (e) {
+      setSave({ saving: false, error: (e as Error).message || 'Push failed.' })
+      return { error: (e as Error).message || 'Push failed.' }
     }
   }
 
@@ -233,12 +458,40 @@ export function App() {
         title: s.title || '',
         kindLabel: s.activity,
         kindColor: colorForActivity(s.activity),
+        location: s.location,
         lead: s.summary?.trim() || undefined,
         body: s.notes,
       }
     }
     return null
   }, [search.s, plan])
+
+  // In edit mode, an open session is edited (title/summary/notes) rather than read.
+  const sheetEdit: SheetEdit | undefined = useMemo(() => {
+    const i = search.s
+    if (!editing || i == null || !plan?.sessions[i]) return undefined
+    const s = plan.sessions[i]
+    return {
+      index: i,
+      title: s.title || '',
+      activity: s.activity || '',
+      location: s.location || '',
+      summary: s.summary || '',
+      notes: s.notes || '',
+      status: s.status || 'planned',
+      onSave: (fields) => {
+        draftIndexRef.current = null // saved — no longer an abandoned draft
+        updateSession(i, fields)
+      },
+    }
+  }, [editing, search.s, plan, updateSession])
+
+  // Distinct activity labels already in use — suggested in the editor's datalist.
+  const activities = useMemo(() => {
+    const set = new Set<string>()
+    plan?.sessions.forEach((s) => s.activity && set.add(s.activity))
+    return [...set].sort()
+  }, [plan])
 
   const updatedLabel = useMemo(() => {
     if (!plan?.updated) return ''
@@ -256,53 +509,68 @@ export function App() {
   return (
     <>
       <main ref={scrollRef} className="fixed inset-0 overflow-y-auto" aria-live="polite">
-      <header
-        className="sticky top-0 z-20 border-b border-[var(--border)] bg-[var(--bg)] px-4 pb-2"
-        style={{ paddingTop: 'calc(env(safe-area-inset-top) + 8px)' }}
-      >
-        <div className="mx-auto flex max-w-[620px] items-center gap-3">
-          <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto whitespace-nowrap [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {headWeek && (
-              <>
-                <span className="flex-none text-[14px] font-semibold">{rangeLabel(headWeek.mon)}</span>
-                {headWeek.isNow && (
-                  <span className="flex-none rounded-full bg-[var(--ring)] px-[7px] py-0.5 text-[10px] font-bold uppercase tracking-[0.04em] text-white">
-                    Now
-                  </span>
-                )}
-              </>
-            )}
-          </div>
-          <div className="flex flex-none items-center gap-2">
-            {currentIndex >= 0 && (
+        <header
+          className="sticky top-0 z-20 border-b border-[var(--border)] bg-[var(--bg)] px-4 pb-2"
+          style={{ paddingTop: 'calc(env(safe-area-inset-top) + 8px)' }}
+        >
+          <div className="mx-auto flex w-full max-w-[1100px] items-center gap-3">
+            <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto whitespace-nowrap [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {headWeek && (
+                <>
+                  <span className="flex-none text-[14px] font-semibold">{rangeLabel(headWeek.mon)}</span>
+                  {headWeek.isNow && (
+                    <span className="flex-none rounded-full bg-[var(--ring)] px-[7px] py-0.5 text-[10px] font-bold uppercase tracking-[0.04em] text-white">
+                      Now
+                    </span>
+                  )}
+                </>
+              )}
+            </div>
+            <div className="flex flex-none items-center gap-2">
+              {currentIndex >= 0 && !editing && (
+                <button
+                  type="button"
+                  onClick={() => goToday()}
+                  className="flex h-8 items-center rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 text-[12px] font-medium text-[var(--muted)] hover:bg-[var(--surface-2)]"
+                >
+                  Today
+                </button>
+              )}
               <button
                 type="button"
-                onClick={() => goToday()}
-                className="flex h-8 items-center rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 text-[12px] font-medium text-[var(--muted)] hover:bg-[var(--surface-2)]"
+                aria-label={editing ? 'Done editing' : 'Edit schedule'}
+                aria-pressed={editing}
+                onClick={() => setEditing((v) => !v)}
+                className={
+                  editing
+                    ? 'flex h-8 items-center rounded-full bg-[var(--ring)] px-3.5 text-[12px] font-semibold text-white'
+                    : iconBtn
+                }
               >
-                Today
+                {editing ? (
+                  'Done'
+                ) : (
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="h-4 w-4"
+                  >
+                    <path d="M12 20h9" />
+                    <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                  </svg>
+                )}
               </button>
-            )}
-            <button
-              type="button"
-              aria-label="Copy plan YAML"
-              onClick={copyYaml}
-              disabled={!state.raw}
-              className={iconBtn}
-            >
-              {copied ? (
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="h-4 w-4 text-[var(--ring)]"
-                >
-                  <path d="M20 6 9 17l-5-5" />
-                </svg>
-              ) : (
+              <button
+                type="button"
+                aria-label="Edit raw YAML"
+                onClick={() => setRawOpen(true)}
+                disabled={!state.raw}
+                className={iconBtn}
+              >
                 <svg
                   viewBox="0 0 24 24"
                   fill="none"
@@ -312,101 +580,166 @@ export function App() {
                   strokeLinejoin="round"
                   className="h-4 w-4"
                 >
-                  <rect x="9" y="9" width="13" height="13" rx="2" />
-                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                  <path d="m8 8-4 4 4 4" />
+                  <path d="m16 8 4 4-4 4" />
                 </svg>
-              )}
-            </button>
-            <button
-              type="button"
-              aria-label="Refresh plan"
-              onClick={() => setRefreshKey((k) => k + 1)}
-              disabled={state.loading}
-              className={iconBtn}
-            >
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className={`h-4 w-4 ${state.loading ? 'animate-spin' : ''}`}
+              </button>
+              <button
+                type="button"
+                aria-label="Refresh plan"
+                onClick={() => {
+                  // Explicit pull: discard any unsaved local edits and re-fetch.
+                  if (dirty && !confirm('Discard unsaved edits and reload from the Gist?')) return
+                  writeDirty(url, false)
+                  setDirty(false)
+                  setRefreshKey((k) => k + 1)
+                }}
+                disabled={state.loading}
+                className={iconBtn}
               >
-                <path d="M21 12a9 9 0 1 1-2.64-6.36" />
-                <path d="M21 3v6h-6" />
-              </svg>
-            </button>
-            <button
-              type="button"
-              aria-label="Settings"
-              onClick={() => setSettingsOpen(true)}
-              className={iconBtn}
-            >
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                className="h-4 w-4"
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className={`h-4 w-4 ${state.loading ? 'animate-spin' : ''}`}
+                >
+                  <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                  <path d="M21 3v6h-6" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                aria-label="Settings"
+                onClick={() => setSettingsOpen(true)}
+                className={iconBtn}
               >
-                <circle cx="12" cy="12" r="3" />
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-              </svg>
-            </button>
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  className="h-4 w-4"
+                >
+                  <circle cx="12" cy="12" r="3" />
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                </svg>
+              </button>
+            </div>
           </div>
-        </div>
-      </header>
+        </header>
 
-        <div className="mx-auto max-w-[620px] px-4 pt-1.5">
-        {state.error ? (
-          <div className="mx-auto my-6 rounded-[12px] border border-[var(--border)] bg-[var(--surface)] p-[14px_16px] text-[14px]">
-            <b className="text-[var(--key)]">Couldn't load the plan.</b>
-            <br />
-            {state.error}
-          </div>
-        ) : (
-          <>
-            {isFallback && plan && (
-              <LoadPlanPrompt
-                onLoad={(planUrl) =>
-                  navigate({ search: (p) => ({ ...p, plan: planUrl, s: undefined }) })
-                }
-              />
-            )}
-            {weeks.length ? (
-              weeks.map((week, i) => (
-                <Week
-                  key={week.monKey}
-                  week={week}
-                  onOpen={openSession}
-                  innerRef={(el) => {
-                    weekRefs.current[i] = el
-                  }}
+        <div className="mx-auto max-w-[1100px] px-4 pt-1.5">
+          {state.error ? (
+            <div className="mx-auto my-6 rounded-[12px] border border-[var(--border)] bg-[var(--surface)] p-[14px_16px] text-[14px]">
+              <b className="text-[var(--key)]">Couldn't load the plan.</b>
+              <br />
+              {state.error}
+            </div>
+          ) : (
+            <>
+              {isFallback && plan && (
+                <LoadPlanPrompt
+                  onLoad={(planUrl) => navigate({ search: (p) => ({ ...p, plan: planUrl, s: undefined }) })}
                 />
-              ))
-            ) : (
-              plan && (
-                <div className="mt-8 text-center text-[14px] text-[var(--muted)]">
-                  No sessions in this plan yet.
-                </div>
-              )
-            )}
-          </>
-        )}
-        <footer className="mt-[22px] px-[2px] pb-[calc(env(safe-area-inset-bottom)+16px)] text-[12px] text-[var(--faint)]">
-          Tap a session for details · scroll through the weeks.
-          {updatedLabel && ` · ${updatedLabel}`}
-        </footer>
+              )}
+              {weeks.length
+                ? weeks.map((week, i) => (
+                    <Week
+                      key={week.monKey}
+                      week={week}
+                      onOpen={openSession}
+                      innerRef={(el) => {
+                        weekRefs.current[i] = el
+                      }}
+                      editing={editing}
+                      edit={editApi}
+                    />
+                  ))
+                : plan && (
+                    <div className="mt-8 text-center text-[14px] text-[var(--muted)]">
+                      No sessions in this plan yet.
+                    </div>
+                  )}
+            </>
+          )}
+          <footer
+            className="mt-[22px] px-[2px] text-[12px] text-[var(--faint)]"
+            style={{
+              paddingBottom: editing
+                ? 'calc(env(safe-area-inset-bottom) + 84px)'
+                : 'calc(env(safe-area-inset-bottom) + 16px)',
+            }}
+          >
+            {editing
+              ? 'Drag a session onto another day to reschedule it.'
+              : 'Tap a session for details · scroll through the weeks.'}
+            {updatedLabel && ` · ${updatedLabel}`}
+          </footer>
         </div>
       </main>
 
-      <DetailSheet content={sheet} onClose={closeSheet} />
+      {/* Floating ghost that follows the pointer during a drag. */}
+      {drag && (
+        <div
+          className="pointer-events-none fixed z-[60] flex max-w-[260px] items-center gap-2 rounded-[10px] border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 text-[13px] font-medium shadow-[0_8px_30px_rgba(8,12,22,0.35)]"
+          style={{ left: drag.x, top: drag.y, transform: 'translate(-50%, -130%)' }}
+        >
+          <span className="h-4 w-1 flex-none rounded-[3px]" style={{ background: drag.color }} />
+          <span className="truncate">{drag.label}</span>
+        </div>
+      )}
+
+      {/* Edit-mode action bar: save the reschedules back to the Gist. */}
+      {editing && (
+        <div
+          className="fixed inset-x-0 bottom-0 z-40 border-t border-[var(--border)] bg-[var(--bg)] px-4 pt-2"
+          style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 10px)' }}
+        >
+          <div className="mx-auto flex w-full max-w-[1100px] items-center gap-3">
+            <div className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--muted)]">
+              {save.error ? (
+                <span className="text-[var(--key)]">{save.error}</span>
+              ) : save.saving ? (
+                'Saving…'
+              ) : save.ok && !dirty ? (
+                'Saved to Gist ✓'
+              ) : dirty ? (
+                'Unsaved changes'
+              ) : (
+                'No changes yet'
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={saveToGist}
+              disabled={!dirty || save.saving}
+              className="flex-none rounded-[8px] bg-[var(--ring)] px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-40"
+            >
+              Save to Gist
+            </button>
+          </div>
+        </div>
+      )}
+
+      <DetailSheet content={sheet} edit={sheetEdit} activities={activities} onClose={closeSheet} />
+      {rawOpen && state.raw != null && (
+        <RawEditSheet
+          initial={state.raw}
+          saving={save.saving}
+          onSave={saveRaw}
+          onClose={() => setRawOpen(false)}
+        />
+      )}
       {settingsOpen && (
         <SettingsSheet
           currentUrl={readConfiguredUrl()}
+          currentToken={readToken()}
           isDemo={isFallback}
           onSave={saveUrl}
+          onSaveToken={writeToken}
           onUseDemo={useDemo}
           onClose={() => setSettingsOpen(false)}
         />

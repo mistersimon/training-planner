@@ -3,9 +3,8 @@
 #
 # Each list item is one session. Only `date` and `title` are required.
 #   date:     YYYY-MM-DD   activity: any label (colors are auto-assigned per label)
-#   important: true to flag a standout session (race/test)
 #   summary:  one line shown on the card
-#   status:   planned (default) | done (completed) | optional (extra/skippable — shows an "Optional" tag)
+#   status:   planned (default) | done | optional | key (standout, highlighted) | fixed (locked to its date)
 #   notes:    longer markdown shown when you tap the session
 
 title: Sample Training Plan
@@ -37,6 +36,7 @@ sessions:
     activity: track
     status: planned
     title: Intervals
+    location: Athletics track
     summary: "6 × 800m · 2min jog rest"
     notes: |-
       Hold an even, repeatable pace — the last rep should feel like the first.
@@ -51,8 +51,7 @@ sessions:
     title: Rest / mobility
   - date: 2026-06-20
     activity: trial
-    status: planned
-    important: true
+    status: key
     title: 5K time trial
     summary: "Goal: a fresh PB"
     notes: |-

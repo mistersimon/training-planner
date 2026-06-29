@@ -4,18 +4,23 @@ import { useEffect, useState } from 'react'
 // (localStorage) and reflected in the address bar as ?plan=.
 export function SettingsSheet({
   currentUrl,
+  currentToken,
   isDemo,
   onSave,
+  onSaveToken,
   onUseDemo,
   onClose,
 }: {
   currentUrl: string
+  currentToken: string
   isDemo: boolean
   onSave: (url: string) => void
+  onSaveToken: (token: string) => void
   onUseDemo: () => void
   onClose: () => void
 }) {
   const [url, setUrl] = useState(currentUrl)
+  const [token, setToken] = useState(currentToken)
 
   useEffect(() => {
     document.body.style.overflow = 'hidden'
@@ -30,6 +35,7 @@ export function SettingsSheet({
   }, [onClose])
 
   const trimmed = url.trim()
+  const trimmedToken = token.trim()
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
@@ -56,6 +62,7 @@ export function SettingsSheet({
           className="p-[4px_18px_22px]"
           onSubmit={(e) => {
             e.preventDefault()
+            onSaveToken(trimmedToken)
             if (trimmed) onSave(trimmed)
           }}
         >
@@ -77,10 +84,27 @@ export function SettingsSheet({
             this device.
           </p>
 
+          <label htmlFor="gist-token" className="mb-1.5 mt-4 block text-[13px] font-medium">
+            GitHub token <span className="font-normal text-[var(--muted)]">— for saving edits</span>
+          </label>
+          <input
+            id="gist-token"
+            type="password"
+            autoComplete="off"
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            placeholder="github_pat_…"
+            className="w-full rounded-[8px] border border-[var(--border)] bg-[var(--bg)] px-2.5 py-2 text-[13px] text-[var(--text)] outline-none focus:border-[var(--ring)]"
+          />
+          <p className="mt-2 text-[12.5px] text-[var(--muted)]">
+            A fine-grained token with <b>Gists</b> read/write is enough. Stored only on this device; needed to
+            push reschedules back to the Gist.
+          </p>
+
           <div className="mt-3.5 flex items-center gap-2">
             <button
               type="submit"
-              disabled={!trimmed || trimmed === currentUrl}
+              disabled={(!trimmed || trimmed === currentUrl) && trimmedToken === currentToken}
               className="rounded-[8px] bg-[var(--ring)] px-3.5 py-2 text-[13px] font-semibold text-white disabled:opacity-40"
             >
               Save &amp; load

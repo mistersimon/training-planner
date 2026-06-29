@@ -1,16 +1,19 @@
 import yaml from 'js-yaml'
 import { dstr, mondayOf, todayKey, localKey } from './format'
 
-export type SessionStatus = 'planned' | 'done' | 'optional'
+// Single source of truth for a session's state — mutually exclusive:
+//   planned (default) · done · optional (skippable) · key (standout, highlighted)
+//   · fixed (locked to its date — can't be dragged/rescheduled)
+export type SessionStatus = 'planned' | 'done' | 'optional' | 'key' | 'fixed'
 
 export interface Session {
   date: string
   title: string
   activity?: string
+  location?: string // where it happens (gym, track, pool…) — shown on the card
   summary?: string // one-liner shown on the card
   notes?: string // longer markdown shown in the detail sheet
-  important?: boolean // mark a standout session (race, test) — highlighted in the UI
-  status?: SessionStatus // planned (default) | done (completed) | optional (extra, skippable)
+  status?: SessionStatus
 }
 
 export interface Plan {
@@ -21,11 +24,28 @@ export interface Plan {
   sessions: Session[]
 }
 
+// Normalize one raw session: coerce the date, and fold the legacy boolean flags
+// (`important`/`fixed`) into the single `status`. An explicit done/optional/key/
+// fixed status wins; otherwise important → key, fixed → fixed.
+function normalizeSession(raw: Record<string, unknown>): Session {
+  const { important, fixed, status, ...rest } = raw as Record<string, unknown> & {
+    important?: boolean
+    fixed?: boolean
+    status?: SessionStatus
+  }
+  let next: SessionStatus | undefined = status
+  if (!next || next === 'planned') {
+    if (important) next = 'key'
+    else if (fixed) next = 'fixed'
+  }
+  return { ...(rest as Omit<Session, 'date' | 'status'>), date: dstr(raw.date), status: next }
+}
+
 // Parse the flat YAML plan: a `sessions` list plus optional title/updated/goals/notes.
 export function loadPlan(text: string): Plan {
   const raw = (yaml.load(text) ?? {}) as Record<string, unknown>
   const sessions: Session[] = Array.isArray(raw.sessions)
-    ? (raw.sessions as Session[]).map((s) => ({ ...s, date: dstr(s.date) }))
+    ? (raw.sessions as Record<string, unknown>[]).map(normalizeSession)
     : []
 
   return {
@@ -105,7 +125,7 @@ export function groupByWeek(sessions: Session[]): WeekGroup[] {
     const day = week.days.find((d) => d.key === dateKey)
     if (day) {
       day.sessions.push(item)
-      if (item.session.important) day.isImportant = true
+      if (item.session.status === 'key') day.isImportant = true
     }
   }
 

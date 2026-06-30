@@ -129,6 +129,8 @@ export function App() {
   useEffect(() => {
     let cancelled = false
     setDirty(readDirty(url))
+    // A genuine (re)load — allow the next plan render to scroll to today once.
+    didInitialScrollRef.current = false
 
     // 1. Render the last cached plan immediately so the app (especially the
     // installed PWA) never opens blank — even offline. Keep `loading` true so
@@ -205,6 +207,8 @@ export function App() {
 
   const scrollRef = useRef<HTMLElement | null>(null)
   const weekRefs = useRef<(HTMLElement | null)[]>([])
+  // Whether the one-time "scroll to today" has run for the current plan load.
+  const didInitialScrollRef = useRef(false)
   // Index of a freshly-added session whose editor is open but not yet saved.
   // Closing the editor without saving removes it (see closeSheet / sheetEdit).
   const draftIndexRef = useRef<number | null>(null)
@@ -239,6 +243,8 @@ export function App() {
       const plan = planRef.current
       const cur = plan?.sessions[index]
       if (!plan || !cur) return
+      // Can't move a past session, and can't reschedule anything into the past.
+      if (cur.date < todayKey || target.dayKey < todayKey) return
       const moved: Session = { ...cur, date: target.dayKey }
       const rest = plan.sessions.filter((_, i) => i !== index)
       let pos = rest.length
@@ -341,6 +347,7 @@ export function App() {
       writeDirty(url, false)
       setDirty(false)
       setSave({ saving: false, ok: true })
+      setEditing(false)
     } catch (e) {
       setSave({ saving: false, error: (e as Error).message || 'Push failed.' })
     }
@@ -353,12 +360,13 @@ export function App() {
     else if (currentIndex >= 0) scrollToWeek(currentIndex, behavior)
   }
 
-  // Jump to today whenever a new plan loads (e.g. opening the PWA), unless a
-  // session is being deep-linked open.
-  const scrolledFor = useRef<Plan | undefined>(undefined)
+  // Jump to today once per plan load (e.g. opening the PWA), unless a session is
+  // being deep-linked open. Reset only by the fetch effect on a real (re)load —
+  // NOT on local edits, which produce a new `plan` object each time and would
+  // otherwise yank the viewport back to today on every keystroke / drag.
   useEffect(() => {
-    if (!plan || plan === scrolledFor.current) return
-    scrolledFor.current = plan
+    if (!plan || didInitialScrollRef.current) return
+    didInitialScrollRef.current = true
     if (search.s == null && currentIndex >= 0) {
       // Wait for the week sections to render before scrolling.
       requestAnimationFrame(() => goToday('auto'))
@@ -470,10 +478,12 @@ export function App() {
     return null
   }, [search.s, plan])
 
-  // In edit mode, an open session is edited rather than read.
+  // Edit capability for the open session. Always available so a session can be
+  // edited straight from its detail sheet; global edit mode just opens it in the
+  // form directly (see `startEditing` on the sheet).
   const sheetEdit: SheetEdit | undefined = useMemo(() => {
     const i = search.s
-    if (!editing || i == null || !plan?.sessions[i]) return undefined
+    if (i == null || !plan?.sessions[i]) return undefined
     const s = plan.sessions[i]
     return {
       index: i,
@@ -489,7 +499,7 @@ export function App() {
         updateSession(i, fields)
       },
     }
-  }, [editing, search.s, plan, updateSession])
+  }, [search.s, plan, updateSession])
 
   // Distinct activity labels already in use — suggested in the editor's datalist.
   const activities = useMemo(() => {
@@ -729,7 +739,13 @@ export function App() {
         </div>
       )}
 
-      <DetailSheet content={sheet} edit={sheetEdit} activities={activities} onClose={closeSheet} />
+      <DetailSheet
+        content={sheet}
+        edit={sheetEdit}
+        startEditing={editing}
+        activities={activities}
+        onClose={closeSheet}
+      />
       {rawOpen && state.raw != null && (
         <RawEditSheet
           initial={state.raw}

@@ -113,8 +113,9 @@ export function groupByWeek(sessions: Session[]): WeekGroup[] {
     const day = week.days.find((d) => d.key === dateKey)
     if (day) {
       day.sessions.push(item)
-      const pri = item.session.priority
-      if (pri === 'high' || pri === 'critical') day.isImportant = true
+      // Only critical (races / key events) highlights the day — high is a
+      // scheduling hint with no visual emphasis.
+      if (item.session.priority === 'critical') day.isImportant = true
     }
   }
 

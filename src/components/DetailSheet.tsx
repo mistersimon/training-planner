@@ -39,11 +39,13 @@ const PRIORITIES: { value: string; label: string }[] = [
 export function DetailSheet({
   content,
   edit,
+  startEditing = false,
   activities,
   onClose,
 }: {
   content: SheetContent | null
   edit?: SheetEdit
+  startEditing?: boolean // open straight into the editor (global edit mode)
   activities?: string[] // existing activity labels, for the edit datalist
   onClose: () => void
 }) {
@@ -57,6 +59,9 @@ export function DetailSheet({
   const [actual, setActual] = useState('')
   const [notes, setNotes] = useState('')
   const [priority, setPriority] = useState('')
+  // Whether the form is showing. Defaults to `startEditing` and can be toggled
+  // on from the read view via the Edit button.
+  const [editingNow, setEditingNow] = useState(false)
 
   // Reset the form whenever a different session opens for editing.
   useEffect(() => {
@@ -68,7 +73,10 @@ export function DetailSheet({
     setActual(edit.actual)
     setNotes(edit.notes)
     setPriority(edit.priority)
+    setEditingNow(startEditing)
   }, [edit?.index, open]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const showEdit = !!edit && editingNow
 
   useEffect(() => {
     if (!open) return
@@ -108,7 +116,7 @@ export function DetailSheet({
                 {content.kindLabel}
               </div>
             )}
-            {edit ? (
+            {showEdit ? (
               <input
                 aria-label="Title"
                 value={title}
@@ -120,6 +128,27 @@ export function DetailSheet({
               <h2 className="m-0 text-[17px] font-semibold leading-[1.3]">{content.title}</h2>
             )}
           </div>
+          {edit && !showEdit && (
+            <button
+              type="button"
+              aria-label="Edit session"
+              onClick={() => setEditingNow(true)}
+              className="flex h-[30px] w-[30px] flex-none items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--muted)] hover:bg-[var(--surface-2)]"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-4 w-4"
+              >
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+              </svg>
+            </button>
+          )}
           <button
             ref={closeRef}
             type="button"
@@ -131,7 +160,7 @@ export function DetailSheet({
           </button>
         </div>
 
-        {edit ? (
+        {showEdit ? (
           <div className="flex flex-col gap-3 overflow-y-auto p-[8px_18px_18px]">
             <div>
               <span className="mb-1 block text-[12px] font-medium text-[var(--muted)]">Priority</span>

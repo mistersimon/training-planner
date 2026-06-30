@@ -1,6 +1,7 @@
 import type { IndexedSession } from '../lib/plan'
 import type { DropTarget } from '../lib/useDragReschedule'
 import { colorForActivity } from '../lib/types'
+import { todayKey } from '../lib/format'
 
 // Edit-mode callbacks + drag state, threaded down from the app. Bundled so the
 // Week → Day → Session chain passes one prop instead of six.
@@ -10,6 +11,24 @@ export interface EditApi {
   onDragStart: (e: React.PointerEvent, index: number, label: string, color: string) => void
   onDelete: (index: number) => void
   onAdd: (dayKey: string) => void
+}
+
+// Signal-bar priority meter: 1/2/3 ascending bars for low/medium/high. Kept
+// monochrome — it's a quiet strength hint, not an alert (critical gets its own
+// badge instead).
+function PriorityBars({ level, label }: { level: number; label: string }) {
+  const heights = [5, 8, 11]
+  return (
+    <span className="flex flex-none items-end gap-[2px]" title={label} aria-label={label}>
+      {heights.map((h, i) => (
+        <span
+          key={i}
+          className="w-[3px] rounded-[1px]"
+          style={{ height: h, background: i < level ? 'var(--muted)' : 'var(--border)' }}
+        />
+      ))}
+    </span>
+  )
 }
 
 // Map-pin glyph — shown next to a session's location.
@@ -42,21 +61,25 @@ export function Session({
   const hasMore = !!(s.notes?.trim() || s.target?.trim() || s.actual?.trim() || s.location?.trim())
 
   const tagBase = 'rounded-[5px] px-1.5 py-px text-[10px] font-bold uppercase tracking-[0.05em]'
+  // Priority bars cover low/medium/high; critical keeps its own loud badge.
+  // Unknown values (schema is extensible) show nothing.
+  const barLevel =
+    s.priority == null || s.priority === ''
+      ? 2 // medium / normal (omitted)
+      : s.priority === 'low'
+        ? 1
+        : s.priority === 'high'
+          ? 3
+          : null
+  const barLabel = barLevel === 1 ? 'Low priority' : barLevel === 3 ? 'High priority' : 'Medium priority'
   const tags = (
-    <span className="ml-auto flex items-center gap-[7px]">
+    <span className="flex items-center gap-[7px]">
       {s.priority === 'critical' && (
         <span className={`${tagBase} bg-[var(--key)] text-white`} title="Critical — race / key event">
           Critical
         </span>
       )}
-      {s.priority === 'high' && (
-        <span className={`${tagBase} bg-[var(--ring)] text-white`} title="High priority">
-          High
-        </span>
-      )}
-      {s.priority === 'low' && (
-        <span className={`${tagBase} bg-[var(--surface-2)] text-[var(--muted)]`}>Low</span>
-      )}
+      {barLevel != null && <PriorityBars level={barLevel} label={barLabel} />}
     </span>
   )
 
@@ -87,10 +110,12 @@ export function Session({
 
   const cls = '-m-[3px] flex w-full items-stretch gap-2.5 rounded-[9px] p-[3px]'
 
-  // Edit mode: every session drags (fixed is just a hint, not a lock), plus
-  // edit + delete controls.
+  // Edit mode: sessions drag to reschedule (fixed is just a hint, not a lock),
+  // plus edit + delete controls. Past sessions can't be moved — they show a lock
+  // instead of the drag handle and don't start a drag.
   if (editing && edit) {
     const isDragging = edit.draggingIndex === item.index
+    const isPast = s.date < todayKey
     // Stop pointerdown on a control from also starting a card drag.
     const stop = (e: React.PointerEvent) => e.stopPropagation()
     const ctrlBtn =
@@ -98,20 +123,27 @@ export function Session({
 
     return (
       <div
-        className={`${cls} items-center cursor-grab touch-none select-none active:cursor-grabbing ${
-          isDragging ? 'opacity-30' : ''
-        }`}
-        onPointerDown={(e) => edit.onDragStart(e, item.index, s.title, color)}
+        className={`${cls} items-center select-none ${
+          isPast ? '' : 'cursor-grab touch-none active:cursor-grabbing'
+        } ${isDragging ? 'opacity-30' : ''}`}
+        onPointerDown={isPast ? undefined : (e) => edit.onDragStart(e, item.index, s.title, color)}
       >
         <span className="flex-none self-center text-[var(--faint)]" aria-hidden>
-          <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4 block">
-            <circle cx="9" cy="6" r="1.6" />
-            <circle cx="15" cy="6" r="1.6" />
-            <circle cx="9" cy="12" r="1.6" />
-            <circle cx="15" cy="12" r="1.6" />
-            <circle cx="9" cy="18" r="1.6" />
-            <circle cx="15" cy="18" r="1.6" />
-          </svg>
+          {isPast ? (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-4 w-4 block">
+              <rect x="5" y="11" width="14" height="9" rx="2" />
+              <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+            </svg>
+          ) : (
+            <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4 block">
+              <circle cx="9" cy="6" r="1.6" />
+              <circle cx="15" cy="6" r="1.6" />
+              <circle cx="9" cy="12" r="1.6" />
+              <circle cx="15" cy="12" r="1.6" />
+              <circle cx="9" cy="18" r="1.6" />
+              <circle cx="15" cy="18" r="1.6" />
+            </svg>
+          )}
         </span>
         {colorBar}
         {content}

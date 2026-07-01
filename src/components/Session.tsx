@@ -61,6 +61,9 @@ export function Session({
   const hasMore = !!(s.notes?.trim() || s.target?.trim() || s.actual?.trim() || s.location?.trim())
 
   const tagBase = 'rounded-[5px] px-1.5 py-px text-[10px] font-bold uppercase tracking-[0.05em]'
+  // Priority is a hint for scheduling upcoming work, so it's irrelevant once a
+  // session is done (actual set) or in the past — hide it in both cases.
+  const showPriority = !s.actual?.trim() && s.date >= todayKey
   // Priority bars cover low/medium/high; critical keeps its own loud badge.
   // Unknown values (schema is extensible) show nothing.
   const barLevel =
@@ -72,7 +75,7 @@ export function Session({
           ? 3
           : null
   const barLabel = barLevel === 1 ? 'Low priority' : barLevel === 3 ? 'High priority' : 'Medium priority'
-  const tags = (
+  const tags = !showPriority ? null : (
     <span className="flex items-center gap-[7px]">
       {s.priority === 'critical' && (
         <span className={`${tagBase} bg-[var(--key)] text-white`} title="Critical — race / key event">

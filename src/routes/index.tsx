@@ -683,9 +683,10 @@ export function App() {
           <footer
             className="mt-[22px] px-[2px] text-[12px] text-[var(--faint)]"
             style={{
-              paddingBottom: editing
-                ? 'calc(env(safe-area-inset-bottom) + 84px)'
-                : 'calc(env(safe-area-inset-bottom) + 16px)',
+              paddingBottom:
+                editing || dirty
+                  ? 'calc(env(safe-area-inset-bottom) + 84px)'
+                  : 'calc(env(safe-area-inset-bottom) + 16px)',
             }}
           >
             {editing
@@ -707,8 +708,10 @@ export function App() {
         </div>
       )}
 
-      {/* Edit-mode action bar: save the reschedules back to the Gist. */}
-      {editing && (
+      {/* Save-to-Gist action bar: shown in edit mode, and whenever there are
+          unsaved edits (e.g. after editing a session from its detail sheet) so
+          closing the sheet surfaces the save action. */}
+      {(editing || dirty) && (
         <div
           className="fixed inset-x-0 bottom-0 z-40 border-t border-[var(--border)] bg-[var(--bg)] px-4 pt-2"
           style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 10px)' }}
